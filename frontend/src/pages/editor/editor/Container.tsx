@@ -8,7 +8,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import ResizeHandle from "@/components/ui/resize-handle";
 import ElementOptionsDropdown from "@/components/editor/ElementOptionsDropdown";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Database } from "lucide-react";
 
 // Helper function to find parent and siblings in the element tree
 function findParentAndSiblings(
@@ -491,6 +491,9 @@ export default function Container({ element }: { element: EditorElement }) {
       case "card":
         addElement({ content: { cardTitle: "Card Title", cardBody: "Card body text.", cardImageUrl: "" }, id: createId(), name: "Card", styles: {}, type: "card", category: "Content" });
         break;
+      case "etl":
+        addElement({ content: [], id: createId(), name: "Extract Load and Transform (ETL)", styles: { ...defaultStyles }, type: "etl", category: "Container" });
+        break;
     }
   };
 
@@ -818,8 +821,8 @@ export default function Container({ element }: { element: EditorElement }) {
       data-element-id={id}
       draggable={type !== "__body" && !state.editor.liveMode}
       className={cn("relative group my-1", {
-        "max-w-full w-full": (type === "container" || type === "section" || type === "form" || isColumnLayout || isRowLayout || isGridLayout || isComplexLayout) && !styles?.width,
-        "h-fit": (type === "container" || type === "section" || type === "form") && !styles?.height,
+        "max-w-full w-full": (type === "container" || type === "section" || type === "form" || type === "etl" || isColumnLayout || isRowLayout || isGridLayout || isComplexLayout) && !styles?.width,
+        "h-fit": (type === "container" || type === "section" || type === "form" || type === "etl") && !styles?.height,
         "h-full": type === "__body",
         "!h-screen !m-0 !rounded-none": type === "__body" && state.editor.liveMode,
         "cursor-grab active:cursor-grabbing": type !== "__body" && !state.editor.liveMode,
@@ -862,18 +865,29 @@ export default function Container({ element }: { element: EditorElement }) {
       {isSelected && !state.editor.liveMode && (
         <Badge className="absolute -top-6 -left-px rounded-none rounded-t-lg hidden sm:flex sm:items-center sm:gap-1 bg-primary text-primary-foreground">
           <GripVertical size={12} className="opacity-80 shrink-0" aria-hidden />
-          {name}
+          {type === "etl" ? "ETL" : name}
         </Badge>
       )}
-      <div style={{ ...styles, width: undefined, height: undefined } as React.CSSProperties} className="w-full h-full p-4">
-        {Array.isArray(content) && content.map((child) => <Recursive key={child.id} element={child} />)}
+      <div style={{ ...styles, width: undefined, height: undefined } as React.CSSProperties} className={cn("w-full h-full", type === "etl" ? "p-0" : "p-4")}>
+        {type === "etl" && Array.isArray(content) && content.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 min-h-[100px] w-full rounded-lg border bg-card shadow-sm border-border">
+            <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-muted">
+              <Database className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <span className="text-xs font-medium text-muted-foreground">ETL</span>
+          </div>
+        ) : type === "etl" && Array.isArray(content) && content.length > 0 ? (
+          content.map((child) => <Recursive key={child.id} element={child} />)
+        ) : (
+          Array.isArray(content) && content.map((child) => <Recursive key={child.id} element={child} />)
+        )}
       </div>
       {isSelected && !state.editor.liveMode && state.editor.selectedElement.type !== "__body" && (
         <ElementOptionsDropdown element={element} />
       )}
       
       {/* Resize handles for columns, rows, grids, cells, and containers */}
-      {isSelected && !state.editor.liveMode && type !== "__body" && (type === "container" || isColumnLayout || isRowLayout || isGridLayout || isComplexLayout || isCell) && (
+      {isSelected && !state.editor.liveMode && type !== "__body" && (type === "container" || type === "etl" || type === "section" || isColumnLayout || isRowLayout || isGridLayout || isComplexLayout || isCell) && (
         <>
           {/* Right edge resize handle for width */}
           <ResizeHandle

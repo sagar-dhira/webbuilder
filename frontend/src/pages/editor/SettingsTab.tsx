@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useEditor } from "@/contexts/EditorContext";
 import {
   Accordion,
@@ -8,12 +9,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import TypographySettings from "./settings/TypographySettings";
 import AppearanceSettings from "./settings/AppearanceSettings";
 import TransformSettings from "./settings/TransformSettings";
 import StrokeSettings from "./settings/StrokeSettings";
 import { categoriesWithCustomSettings } from "@/lib/constants";
+import { toast } from "sonner";
 
 function getContent(sel: { content: unknown }) {
   return typeof sel.content === "object" && sel.content !== null && !Array.isArray(sel.content) ? (sel.content as Record<string, unknown>) : {};
@@ -80,9 +83,116 @@ export default function SettingsTab() {
   };
 
   const showCustom = categoriesWithCustomSettings.includes(sel.category);
+  const isEtl = sel.type === "etl";
+  const [executing, setExecuting] = useState(false);
+
+  const handleEtlConfigChange = (field: "apiEndpoint" | "token" | "tenantName" | "request" | "body", value: string) => {
+    dispatch({
+      type: "UPDATE_ELEMENT",
+      payload: {
+        elementDetails: { ...sel, [field]: value },
+      },
+    });
+  };
+
+  const handleEtlExecute = async () => {
+    const endpoint = sel.apiEndpoint?.trim();
+    const token = sel.token?.trim();
+    const tenantName = sel.tenantName?.trim();
+    const method = (sel.request?.trim().toUpperCase() || "GET") as RequestInit["method"];
+    const body = sel.body?.trim() || undefined;
+    if (!endpoint) {
+      toast.error("Enter an API endpoint");
+      return;
+    }
+    setExecuting(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (tenantName) headers["X-Tenant-Name"] = tenantName;
+      if (body && (method === "POST" || method === "PUT" || method === "PATCH")) headers["Content-Type"] = "application/json";
+      const res = await fetch(endpoint, {
+        method: method || "GET",
+        headers,
+        ...(body && (method === "POST" || method === "PUT" || method === "PATCH") ? { body } : {}),
+      });
+      const ok = res.ok;
+      const data = await res.json().catch(() => ({}));
+      if (ok) {
+        toast.success(data.message || "Execute succeeded");
+      } else {
+        toast.error(data.message || data.msg || `Request failed (${res.status})`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setExecuting(false);
+    }
+  };
 
   return (
-    <Accordion type="multiple" defaultValue={["Custom", "Transform", "Appearance", "Typography", "Stroke"]} className="w-full">
+    <Accordion
+      type="multiple"
+      defaultValue={["Custom", "Transform", "Appearance", "Typography", "Stroke", ...(isEtl ? ["ETL"] : [])]}
+      className="w-full"
+    >
+      {isEtl && (
+        <AccordionItem value="ETL" className="px-2 py-0">
+          <AccordionTrigger className="!no-underline">Quick Style</AccordionTrigger>
+          <AccordionContent className="px-1 space-y-4">
+            <div className="flex flex-col gap-2">
+              <Label className="text-muted-foreground">API endpoint</Label>
+              <Input
+                placeholder="https://api.example.com/run"
+                value={sel.apiEndpoint ?? ""}
+                onChange={(e) => handleEtlConfigChange("apiEndpoint", e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label className="text-muted-foreground">Tenant name</Label>
+              <Input
+                placeholder="Tenant name"
+                value={sel.tenantName ?? ""}
+                onChange={(e) => handleEtlConfigChange("tenantName", e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label className="text-muted-foreground">Token</Label>
+              <Input
+                type="password"
+                placeholder="Bearer token"
+                value={sel.token ?? ""}
+                onChange={(e) => handleEtlConfigChange("token", e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label className="text-muted-foreground">Request</Label>
+              <Input
+                placeholder="e.g. GET, POST"
+                value={sel.request ?? ""}
+                onChange={(e) => handleEtlConfigChange("request", e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label className="text-muted-foreground">Body</Label>
+              <Textarea
+                placeholder='e.g. {"key": "value"}'
+                value={sel.body ?? ""}
+                onChange={(e) => handleEtlConfigChange("body", e.target.value)}
+                className="min-h-[80px]"
+                rows={4}
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleEtlExecute}
+              disabled={executing}
+            >
+              {executing ? "Executing…" : "Execute"}
+            </Button>
+          </AccordionContent>
+        </AccordionItem>
+      )}
       {showCustom && (
         <AccordionItem value="Custom" className="px-2 py-0">
           <AccordionTrigger className="!no-underline capitalize">

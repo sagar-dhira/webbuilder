@@ -10,6 +10,7 @@ export type ElementTypes =
   | "ol" | "ul" | "li"
   | "blockquote" | "code" | "hr" | "badge" | "spacer"
   | "table" | "accordion" | "tabs" | "card"
+  | "etl"
   | "__body"
   | null;
 

@@ -37,6 +37,17 @@ import {
   CreditCard,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 function getContent(el: EditorElement): Record<string, unknown> {
   return typeof el.content === "object" && el.content !== null && !Array.isArray(el.content) ? (el.content as Record<string, unknown>) : {};
@@ -95,6 +106,7 @@ export default function ElementOptionsDropdown({ element }: Props) {
 
   const isTextElement = element.category === "Text";
   const isContainer = element.category === "Container";
+  const isEtl = element.type === "etl";
   const isImage = element.type === "image";
   const isMedia = element.category === "Media";
   const isContent = element.category === "Content";
@@ -102,16 +114,152 @@ export default function ElementOptionsDropdown({ element }: Props) {
   const isLink = element.type === "link";
   const isButton = element.type === "button";
   const showQuickStyleForBlock = isMedia || isContent || isLink || isButton;
+  const [executing, setExecuting] = useState(false);
+
+  const handleEtlConfigChange = (field: "apiEndpoint" | "token" | "tenantName" | "request" | "body", value: string) => {
+    dispatch({
+      type: "UPDATE_ELEMENT",
+      payload: { elementDetails: { ...element, [field]: value } },
+    });
+  };
+
+  const handleEtlExecute = async () => {
+    const endpoint = element.apiEndpoint?.trim();
+    const token = element.token?.trim();
+    const tenantName = element.tenantName?.trim();
+    const method = (element.request?.trim().toUpperCase() || "GET") as RequestInit["method"];
+    const body = element.body?.trim() || undefined;
+    if (!endpoint) {
+      toast.error("Enter an API endpoint");
+      return;
+    }
+    setExecuting(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (tenantName) headers["tenantname"] = tenantName;
+      if (body && (method === "POST" || method === "PUT" || method === "PATCH")) headers["Content-Type"] = "application/json";
+      const res = await fetch(endpoint, {
+        method: method || "GET",
+        headers,
+        ...(body && (method === "POST" || method === "PUT" || method === "PATCH") ? { body } : {}),
+      });
+      const ok = res.ok;
+      const data = await res.json().catch(() => ({}));
+      if (ok) toast.success(data.message || "Execute succeeded");
+      else toast.error(data.message || data.msg || `Request failed (${res.status})`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const threeDotsTrigger = (
+    <div
+      className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-7 -right-px rounded-t-lg cursor-pointer hover:bg-primary/90 transition-colors z-10"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <MoreVertical className="text-primary-foreground" size={16} />
+    </div>
+  );
+
+  if (isEtl) {
+    return (
+      <Dialog>
+        <DialogTrigger asChild>{threeDotsTrigger}</DialogTrigger>
+        <DialogContent
+          className="max-w-md max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>ETL – Quick config</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">API endpoint</Label>
+              <Input
+                placeholder="https://api.example.com/run"
+                value={element.apiEndpoint ?? ""}
+                onChange={(e) => handleEtlConfigChange("apiEndpoint", e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Tenant name</Label>
+              <Input
+                placeholder="Tenant name"
+                value={element.tenantName ?? ""}
+                onChange={(e) => handleEtlConfigChange("tenantName", e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Token</Label>
+              <Input
+                type="password"
+                placeholder="Bearer token"
+                value={element.token ?? ""}
+                onChange={(e) => handleEtlConfigChange("token", e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Request</Label>
+              <Input
+                placeholder="e.g. GET, POST"
+                value={element.request ?? ""}
+                onChange={(e) => handleEtlConfigChange("request", e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Body</Label>
+              <Textarea
+                placeholder='e.g. {"key": "value"}'
+                value={element.body ?? ""}
+                onChange={(e) => handleEtlConfigChange("body", e.target.value)}
+                className="min-h-[80px] text-sm"
+                rows={4}
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleEtlExecute}
+              disabled={executing}
+            >
+              {executing ? "Executing…" : "Execute"}
+            </Button>
+            <div className="flex gap-2 pt-2 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => handleDuplicate()}
+              >
+                <Copy className="h-4 w-4 mr-1" />
+                Duplicate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-destructive hover:text-destructive"
+                onClick={() => handleDelete()}
+              >
+                <Trash className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div
-          className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-7 -right-px rounded-t-lg cursor-pointer hover:bg-primary/90 transition-colors z-10"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MoreVertical className="text-primary-foreground" size={16} />
-        </div>
+        {threeDotsTrigger}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
@@ -241,8 +389,8 @@ export default function ElementOptionsDropdown({ element }: Props) {
           </>
         )}
 
-        {/* Container Element Options */}
-        {isContainer && (
+        {/* Container Element Options (exclude ETL – ETL uses modal above) */}
+        {isContainer && !isEtl && (
           <>
             <div className="p-3 space-y-3">
               <DropdownMenuLabel className="px-0 text-xs font-semibold flex items-center gap-2">

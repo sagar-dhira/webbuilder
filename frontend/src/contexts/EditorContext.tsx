@@ -49,6 +49,12 @@ export type EditorElement = {
   content: EditorElement[] | ElementContentPayload;
   formAction?: string;
   formMethod?: string;
+  /** ETL widget: API endpoint, token, tenant, request, body for execute */
+  apiEndpoint?: string;
+  token?: string;
+  tenantName?: string;
+  request?: string;
+  body?: string;
 };
 
 export type Editor = {

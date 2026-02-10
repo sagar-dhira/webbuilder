@@ -48,6 +48,7 @@ export default function Recursive({ element }: { element: EditorElement }) {
     case "Layout6":
     case "Layout7":
     case "Layout8":
+    case "etl":
       return <Container element={element} />;
     case "image":
       return <ImageElement element={element} />;
