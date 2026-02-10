@@ -1,0 +1,28 @@
+.editorRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.canvasArea {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.leftPanel {
+  flex-shrink: 0;
+  background: hsl(var(--muted));
+}
+
+.canvas {
+  flex: 1;
+  padding: 0;
+  margin: 0;
+  overflow: auto;
+}
+
+.rightPanel {
+  flex-shrink: 0;
+}

@@ -1,0 +1,37 @@
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.submitButton {
+  width: 100%;
+}
+
+.footer {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.link {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  &:hover {
+    text-decoration: none;
+  }
+}

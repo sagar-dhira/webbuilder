@@ -1,0 +1,119 @@
+.sidebar {
+  margin-top: 0;
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid hsl(var(--border));
+  background: hsl(var(--sidebar-background));
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  flex-shrink: 0;
+  padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
+}
+
+.label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.25rem;
+}
+
+.siteName {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  margin-bottom: 0.375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.pageRow {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.625rem;
+}
+
+.pageName {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageLabel {
+  font-size: 0.6875rem;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+
+.statusBadge.draft {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+}
+
+.statusBadge.saved {
+  background: hsl(142 76% 96%);
+  color: hsl(142 72% 28%);
+  border: 1px solid hsl(142 60% 88%);
+}
+
+.statusBadge.published {
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.25);
+}
+
+.tabs {
+  display: flex;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.tabList {
+  flex-shrink: 0;
+  width: 4rem;
+  padding: 0.5rem;
+  border-right: 1px solid hsl(var(--border));
+}
+
+.content {
+  flex: 1;
+  padding: 0.5rem;
+  max-height: calc(100vh - 95px);
+  overflow-y: auto;
+  min-width: 0;
+}

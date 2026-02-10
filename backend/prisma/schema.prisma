@@ -1,0 +1,53 @@
+// Prisma schema for Framely - PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pages Page[]
+}
+
+model Page {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title        String
+  previewImage String?  @db.Text
+  favicon      String?  @db.Text
+  visible      Boolean  @default(false)
+  content      String?  @db.Text
+  subdomain    String   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([id, userId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  level     String   // info | warn | error
+  action    String   // e.g. auth_login, sites_create, request
+  message   String   @db.Text
+  userId    String?  // null for unauthenticated
+  meta      String?  @db.Text // JSON: path, method, statusCode, etc.
+  source    String?  // backend | frontend
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}

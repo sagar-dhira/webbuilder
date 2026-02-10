@@ -1,0 +1,38 @@
+.wrapper {
+  height: 100%;
+  overflow-y: scroll;
+  max-width: 100%;
+  overflow-x: clip;
+  background: hsl(var(--muted));
+}
+
+.canvas {
+  height: 100%;
+  background: hsl(var(--muted));
+  transition: all 0.2s;
+  padding: 3rem 5rem;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.canvasLive {
+  padding: 0;
+  margin: 0;
+  min-width: 100vw;
+  min-height: 100vh;
+}
+
+.exitPreview {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 500;
+  transition: all 0.3s;
+}
+
+.exitPreviewHidden {
+  transform: translateX(5rem);
+  opacity: 0;
+}
