@@ -8,7 +8,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import ResizeHandle from "@/components/ui/resize-handle";
 import ElementOptionsDropdown from "@/components/editor/ElementOptionsDropdown";
-import { GripVertical, Database } from "lucide-react";
+import { GripVertical, Database, Hash, FileText, Activity, Calendar } from "lucide-react";
 
 // Helper function to find parent and siblings in the element tree
 function findParentAndSiblings(
@@ -40,9 +40,21 @@ function parseSize(value: string | undefined): number {
   return parseFloat(match[1]);
 }
 
+const ETL_DEFAULT_BODY = () => {
+  const raw = import.meta.env.VITE_ETL_DEFAULT_BODY;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      return JSON.stringify(JSON.parse(raw));
+    } catch {
+      return raw;
+    }
+  }
+  return JSON.stringify({ pipeline_name: "", limit: "", page_number: 1, filterStatus: "", data_flow_type: "ETL" });
+};
+
 export default function Container({ element }: { element: EditorElement }) {
   const { id, content, name, styles, type } = element;
-  const { state, dispatch } = useEditor();
+  const { state, dispatch, setPendingEtlAutoRunId } = useEditor();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const isSelected = state.editor.selectedElement.id === id;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -491,9 +503,28 @@ export default function Container({ element }: { element: EditorElement }) {
       case "card":
         addElement({ content: { cardTitle: "Card Title", cardBody: "Card body text.", cardImageUrl: "" }, id: createId(), name: "Card", styles: {}, type: "card", category: "Content" });
         break;
-      case "etl":
-        addElement({ content: [], id: createId(), name: "Extract Load and Transform (ETL)", styles: { ...defaultStyles }, type: "etl", category: "Container" });
+      case "etl": {
+        const etlId = createId();
+        const etlUrl = import.meta.env.VITE_ETL_API_URL || "https://api-dev.akashic.dhira.io/application/data_flow/list";
+        const etlTenant = import.meta.env.VITE_ETL_TENANT_NAME || "tenanta";
+        const etlElement: EditorElement = {
+          content: [],
+          id: etlId,
+          name: "Extract Load and Transform (ETL)",
+          styles: { ...defaultStyles },
+          type: "etl",
+          category: "Container",
+          apiEndpoint: etlUrl,
+          tenantName: etlTenant,
+          request: "POST",
+          body: ETL_DEFAULT_BODY(),
+          useToken: true,
+        };
+        addElement(etlElement);
+        dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: etlElement } });
+        setPendingEtlAutoRunId(etlId);
         break;
+      }
     }
   };
 
@@ -869,7 +900,81 @@ export default function Container({ element }: { element: EditorElement }) {
         </Badge>
       )}
       <div style={{ ...styles, width: undefined, height: undefined } as React.CSSProperties} className={cn("w-full h-full", type === "etl" ? "p-0" : "p-4")}>
-        {type === "etl" && Array.isArray(content) && content.length === 0 ? (
+        {type === "etl" && element.etlDetailData && element.etlDetailData.length > 0 ? (
+          <div className="flex flex-col gap-3 min-h-[100px] w-full rounded-lg border bg-card shadow-sm border-border p-4 overflow-auto">
+            {element.etlDetailData.map((item, idx) => {
+              const id = item.data_flow_id ?? item.entity_id ?? "—";
+              const name = item.data_flow_name ?? "—";
+              const status = item.status ?? "—";
+              const created = item.created_datetime_timestamp ?? item.created_datetime_times ?? "—";
+              const formatDate = (val: unknown) => {
+                if (val == null || val === "") return "—";
+                const str = String(val);
+                try {
+                  const d = new Date(str);
+                  if (!isNaN(d.getTime())) {
+                    const date = d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+                    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+                    return `${date} at ${time}`;
+                  }
+                } catch {}
+                return str;
+              };
+              return (
+                <div
+                  key={idx}
+                  className="rounded-lg border bg-gradient-to-br from-background to-muted/30 p-4 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Hash className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Data Flow ID</p>
+                        <p className="text-sm font-semibold truncate">{id != null ? String(id) : "—"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Data Flow Name</p>
+                        <p className="text-sm font-semibold truncate" title={String(name)}>{name != null ? String(name) : "—"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Activity className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
+                        <p className={cn(
+                          "text-sm font-medium",
+                          status === "finished" || status === "completed" ? "text-emerald-600 dark:text-emerald-400" : "",
+                          status === "running" || status === "pending" ? "text-amber-600 dark:text-amber-400" : "",
+                          status === "failed" || status === "error" ? "text-destructive" : ""
+                        )}>
+                          {status != null && status !== "" ? String(status) : "—"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Calendar className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Created</p>
+                        <p className="text-sm font-medium">{formatDate(created)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : type === "etl" && Array.isArray(content) && content.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 min-h-[100px] w-full rounded-lg border bg-card shadow-sm border-border">
             <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-muted">
               <Database className="w-6 h-6 text-muted-foreground" />

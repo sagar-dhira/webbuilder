@@ -32,8 +32,6 @@ export default function ResizeHandle({ onResize, direction, className, disabled 
         
         // Only call onResize if there's actual movement
         if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
-          // Pass a flag for first move to reset initial size
-          const firstMove = isFirstMove.current;
           isFirstMove.current = false;
           
           // Create a wrapper that passes the first move flag

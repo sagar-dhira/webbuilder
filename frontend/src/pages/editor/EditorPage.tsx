@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { EditorProvider, useEditor } from "@/contexts/EditorContext";
+import { EditorProvider } from "@/contexts/EditorContext";
 import { api } from "@/lib/api";
 import { logInfo } from "@/lib/logger";
 import EditorNavigation from "./EditorNavigation";
@@ -9,7 +9,6 @@ import SiteEditor from "./SiteEditor";
 import LeftSidebar from "./LeftSidebar";
 import RightSidebar from "./RightSidebar";
 import { Button } from "@/components/ui/button";
-import styles from "./EditorPage.module.scss";
 
 function EditorContent() {
   const { siteId } = useParams<{ siteId: string }>();
@@ -27,7 +26,7 @@ function EditorContent() {
     api<{ site: { id: string; title: string; subdomain: string; visible: boolean } }>(`/sites/${siteId}`).then(
       (res) => {
         if (res.success && res.site) {
-          setSiteDetails(res.site);
+          setSiteDetails(res.site as { id: string; title: string; subdomain: string; visible: boolean });
           logInfo("editor_open", "User opened editor", { siteId });
         } else {
           setError(res.msg || "Site not found");

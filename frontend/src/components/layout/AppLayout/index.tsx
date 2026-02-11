@@ -29,7 +29,7 @@ export function AppLayout({
   className,
 }: AppLayoutProps) {
   return (
-    <div className={cn(styles.root, className)}>
+    <div className={cn(styles.root, className)} data-variant={variant}>
       {header && <header className={styles.header}>{header}</header>}
 
       <div className={styles.body}>

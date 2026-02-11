@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { logInfo } from "@/lib/logger";
+import { ShieldCheck } from "lucide-react";
 import styles from "./RegisterPage.module.scss";
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { register, isKeycloak } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -19,6 +20,11 @@ export default function RegisterPage() {
   useEffect(() => {
     logInfo("page_view", "Register page viewed");
   }, []);
+
+  const handleKeycloakRegister = () => {
+    logInfo("auth_register_submit", "User clicked Sign up with Keycloak");
+    register("", "");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,52 +44,77 @@ export default function RegisterPage() {
       <Card className={styles.card}>
         <CardHeader>
           <CardTitle>Create account</CardTitle>
-          <CardDescription>Sign up to start building your sites</CardDescription>
+          <CardDescription>
+            {isKeycloak
+              ? "Create an account via Keycloak"
+              : "Sign up to start building your sites"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className={styles.form}>
-            <div>
-              <Label htmlFor="name">Name (optional)</Label>
-              <Input
-                id="name"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Min 6 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            <Button type="submit" className={styles.submitButton} disabled={loading}>
-              {loading ? "Creating account..." : "Sign up"}
-            </Button>
-          </form>
-          <p className={styles.footer}>
-            Already have an account?{" "}
-            <Link to="/login" className={styles.link}>
-              Sign in
-            </Link>
-          </p>
+          {isKeycloak ? (
+            <>
+              <Button
+                type="button"
+                className={styles.submitButton}
+                onClick={handleKeycloakRegister}
+              >
+                <ShieldCheck className="w-4 h-4 mr-2" />
+                Sign up with Keycloak
+              </Button>
+              <p className={styles.footer}>
+                Already have an account?{" "}
+                <Link to="/login" className={styles.link}>
+                  Sign in
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <form onSubmit={handleSubmit} className={styles.form}>
+                <div>
+                  <Label htmlFor="name">Name (optional)</Label>
+                  <Input
+                    id="name"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Min 6 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <Button type="submit" className={styles.submitButton} disabled={loading}>
+                  {loading ? "Creating account..." : "Sign up"}
+                </Button>
+              </form>
+              <p className={styles.footer}>
+                Already have an account?{" "}
+                <Link to="/login" className={styles.link}>
+                  Sign in
+                </Link>
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

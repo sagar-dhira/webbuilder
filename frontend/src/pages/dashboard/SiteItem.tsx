@@ -32,7 +32,6 @@ export default function SiteItem({ site, onDeleted }: { site: Page; onDeleted?: 
     }
   };
 
-  const siteUrl = `/${site.subdomain}`;
   const editorUrl = `/editor/${site.id}`;
   const liveUrl = `${window.location.origin}/s/${site.subdomain}`;
 
@@ -40,7 +39,7 @@ export default function SiteItem({ site, onDeleted }: { site: Page; onDeleted?: 
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 group">
         <div className="flex-1">
-          <Link to={editorUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
+          <Link to={editorUrl} className="flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-semibold transition-colors group-hover:text-primary">
                 {site.title}

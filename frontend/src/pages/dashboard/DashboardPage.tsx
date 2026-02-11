@@ -21,7 +21,7 @@ export default function DashboardPage() {
   const fetchSites = async () => {
     const res = await api<{ sites: Page[] }>("/sites");
     if (res.success && res.sites) {
-      setSites(res.sites);
+      setSites(res.sites as Page[]);
     }
     setLoading(false);
   };

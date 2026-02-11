@@ -1,4 +1,4 @@
-import React, { createContext, Dispatch, useContext, useReducer } from "react";
+import React, { createContext, Dispatch, useContext, useReducer, useState } from "react";
 import { ElementTypes, CategoryTypes } from "@/lib/constants";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -49,12 +49,14 @@ export type EditorElement = {
   content: EditorElement[] | ElementContentPayload;
   formAction?: string;
   formMethod?: string;
-  /** ETL widget: API endpoint, token, tenant, request, body for execute */
+  /** ETL widget: API endpoint, use session token, tenant, request, body for execute */
   apiEndpoint?: string;
-  token?: string;
+  useToken?: boolean;
   tenantName?: string;
   request?: string;
   body?: string;
+  /** ETL listById response data to display in the card */
+  etlDetailData?: Record<string, unknown>[];
 };
 
 export type Editor = {
@@ -344,6 +346,9 @@ interface EditorContextValue {
   dispatch: Dispatch<EditorAction>;
   siteId: string;
   siteDetails: { id: string; title: string; subdomain: string; visible: boolean } | null;
+  /** When set, ETL element with this id should auto-run API on mount (used after drag-and-drop) */
+  pendingEtlAutoRunId: string | null;
+  setPendingEtlAutoRunId: (id: string | null) => void;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -358,8 +363,9 @@ export function EditorProvider({
   siteDetails: { id: string; title: string; subdomain: string; visible: boolean; content?: string | null };
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
+  const [pendingEtlAutoRunId, setPendingEtlAutoRunId] = useState<string | null>(null);
   return (
-    <EditorContext.Provider value={{ state, dispatch, siteId, siteDetails }}>
+    <EditorContext.Provider value={{ state, dispatch, siteId, siteDetails, pendingEtlAutoRunId, setPendingEtlAutoRunId }}>
       {children}
     </EditorContext.Provider>
   );

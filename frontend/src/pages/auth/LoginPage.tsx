@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { logInfo } from "@/lib/logger";
+import { ShieldCheck } from "lucide-react";
 import styles from "./LoginPage.module.scss";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, isKeycloak } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,6 +19,11 @@ export default function LoginPage() {
   useEffect(() => {
     logInfo("page_view", "Login page viewed");
   }, []);
+
+  const handleKeycloakLogin = () => {
+    logInfo("auth_login_submit", "User clicked Sign in with Keycloak");
+    login("", "");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,41 +43,63 @@ export default function LoginPage() {
       <Card className={styles.card}>
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
-          <CardDescription>Enter your credentials to access your dashboard</CardDescription>
+          <CardDescription>
+            {isKeycloak
+              ? "Sign in with your organization account"
+              : "Enter your credentials to access your dashboard"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className={styles.form}>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className={styles.submitButton} disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-          <p className={styles.footer}>
-            Don&apos;t have an account?{" "}
-            <Link to="/register" className={styles.link}>
-              Sign up
-            </Link>
-          </p>
+          {isKeycloak ? (
+            <>
+              <Button
+                type="button"
+                className={styles.submitButton}
+                onClick={handleKeycloakLogin}
+              >
+                <ShieldCheck className="w-4 h-4 mr-2" />
+                Sign in with Keycloak
+              </Button>
+              <p className={styles.footer}>
+                You will be redirected to the secure login page.
+              </p>
+            </>
+          ) : (
+            <>
+              <form onSubmit={handleSubmit} className={styles.form}>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className={styles.submitButton} disabled={loading}>
+                  {loading ? "Signing in..." : "Sign in"}
+                </Button>
+              </form>
+              <p className={styles.footer}>
+                Don&apos;t have an account?{" "}
+                <Link to="/register" className={styles.link}>
+                  Sign up
+                </Link>
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

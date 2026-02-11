@@ -35,8 +35,10 @@ import {
   PanelTop,
   Layers,
   CreditCard,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +49,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 function getContent(el: EditorElement): Record<string, unknown> {
@@ -58,7 +61,7 @@ interface Props {
 }
 
 export default function ElementOptionsDropdown({ element }: Props) {
-  const { dispatch } = useEditor();
+  const { dispatch, pendingEtlAutoRunId, setPendingEtlAutoRunId } = useEditor();
   const [colorInput, setColorInput] = useState(element.styles?.color || "#000000");
   const [bgColorInput, setBgColorInput] = useState(element.styles?.backgroundColor || "#ffffff");
   const c = getContent(element);
@@ -110,50 +113,163 @@ export default function ElementOptionsDropdown({ element }: Props) {
   const isImage = element.type === "image";
   const isMedia = element.category === "Media";
   const isContent = element.category === "Content";
-  const isFormEl = element.category === "Form" || element.type === "form";
   const isLink = element.type === "link";
   const isButton = element.type === "button";
   const showQuickStyleForBlock = isMedia || isContent || isLink || isButton;
   const [executing, setExecuting] = useState(false);
 
-  const handleEtlConfigChange = (field: "apiEndpoint" | "token" | "tenantName" | "request" | "body", value: string) => {
+  const handleEtlConfigChange = (field: "apiEndpoint" | "tenantName" | "request" | "body", value: string) => {
     dispatch({
       type: "UPDATE_ELEMENT",
       payload: { elementDetails: { ...element, [field]: value } },
     });
   };
 
-  const handleEtlExecute = async () => {
+  const [etlResponse, setEtlResponse] = useState<Record<string, unknown>[] | null>(null);
+  const [etlError, setEtlError] = useState<string | null>(null);
+  const [etlConfigOpen, setEtlConfigOpen] = useState(false);
+  const [etlResponseModalOpen, setEtlResponseModalOpen] = useState(false);
+  const [etlSelectedRows, setEtlSelectedRows] = useState<Set<number>>(new Set());
+  const [etlCurrentPage, setEtlCurrentPage] = useState(1);
+  const [etlTotalPages, setEtlTotalPages] = useState<number | null>(null);
+
+  const fetchListById = useCallback(
+    async (selectedIndices: Set<number>) => {
+      if (!etlResponse || selectedIndices.size === 0) return;
+      const token = element.useToken
+        ? localStorage.getItem("access_token") || localStorage.getItem("token")
+        : null;
+      const tenantName = element.tenantName?.trim();
+      const baseUrl = element.apiEndpoint?.trim().replace(/\/list\/?$/, "") || "";
+      const listByIdUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/listById` : "https://api-dev.akashic.dhira.io/application/data_flow/listById";
+      const selectedIds = Array.from(selectedIndices).map((i) => etlResponse[i]?.data_flow_id ?? etlResponse[i]?.entity_id).filter((v) => v != null);
+      if (selectedIds.length === 0) return;
+      const body = {
+        where_key: ["data_flow_id"],
+        where_value: selectedIds.length === 1 ? [selectedIds[0]] : selectedIds,
+        select_keys: Object.keys(etlResponse[0]).filter((k) => k !== "value"),
+      };
+      try {
+        const headers: Record<string, string> = { accept: "*/*", "Content-Type": "application/json" };
+        if (token?.trim()) headers["Authorization"] = `Bearer ${token.trim()}`;
+        if (tenantName) headers["tenantname"] = tenantName;
+        const res = await fetch(listByIdUrl, { method: "POST", headers, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        console.log("ETL listById response:", data);
+        const rows = Array.isArray(data.Response) ? data.Response : (Array.isArray(data.response) ? data.response : []);
+        if (rows.length > 0) {
+          dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: { ...element, etlDetailData: rows } } });
+        }
+      } catch (err) {
+        console.error("ETL listById error:", err);
+      }
+    },
+    [element, dispatch, etlResponse]
+  );
+
+  function normalizeToRows(data: unknown): Record<string, unknown>[] {
+    if (Array.isArray(data)) {
+      const ok = data.every((x) => typeof x === "object" && x !== null && !Array.isArray(x));
+      if (ok) return data as Record<string, unknown>[];
+      return [{ value: data }];
+    }
+    if (typeof data === "object" && data !== null) {
+      const o = data as Record<string, unknown>;
+      if (Array.isArray(o.result)) return o.result as Record<string, unknown>[];
+      if (Array.isArray(o.data)) return o.data as Record<string, unknown>[];
+      if (Array.isArray(o.rows)) return o.rows as Record<string, unknown>[];
+      if (Array.isArray(o.items)) return o.items as Record<string, unknown>[];
+      if (typeof o.data === "object" && o.data !== null) {
+        const nested = o.data as Record<string, unknown>;
+        if (Array.isArray(nested.result)) return nested.result as Record<string, unknown>[];
+      }
+      return [o];
+    }
+    return [{ value: data }];
+  }
+
+  const handleEtlExecute = async (pageNumber?: number) => {
     const endpoint = element.apiEndpoint?.trim();
-    const token = element.token?.trim();
+    const token = element.useToken
+      ? localStorage.getItem("access_token") || localStorage.getItem("token")
+      : null;
     const tenantName = element.tenantName?.trim();
     const method = (element.request?.trim().toUpperCase() || "GET") as RequestInit["method"];
-    const body = element.body?.trim() || undefined;
+    let bodyStr = element.body?.trim() || undefined;
+    const page = pageNumber ?? 1;
+    if (bodyStr && (method === "POST" || method === "PUT" || method === "PATCH")) {
+      try {
+        const parsed = JSON.parse(bodyStr) as Record<string, unknown>;
+        bodyStr = JSON.stringify({ ...parsed, page_number: page });
+      } catch {
+        // keep original body if not valid JSON
+      }
+    }
     if (!endpoint) {
       toast.error("Enter an API endpoint");
       return;
     }
     setExecuting(true);
+    if (pageNumber === undefined) {
+      setEtlResponse(null);
+    }
+    setEtlError(null);
     try {
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const headers: Record<string, string> = {
+        "accept": "*/*",
+      };
+      if (token?.trim()) headers["Authorization"] = `Bearer ${token.trim()}`;
       if (tenantName) headers["tenantname"] = tenantName;
-      if (body && (method === "POST" || method === "PUT" || method === "PATCH")) headers["Content-Type"] = "application/json";
+      if (bodyStr && (method === "POST" || method === "PUT" || method === "PATCH")) headers["Content-Type"] = "application/json";
       const res = await fetch(endpoint, {
         method: method || "GET",
         headers,
-        ...(body && (method === "POST" || method === "PUT" || method === "PATCH") ? { body } : {}),
+        ...(bodyStr && (method === "POST" || method === "PUT" || method === "PATCH") ? { body: bodyStr } : {}),
       });
-      const ok = res.ok;
       const data = await res.json().catch(() => ({}));
-      if (ok) toast.success(data.message || "Execute succeeded");
-      else toast.error(data.message || data.msg || `Request failed (${res.status})`);
+      if (res.ok) {
+        toast.success((data as { message?: string }).message || "Execute succeeded");
+        const rows = normalizeToRows(data);
+        setEtlResponse(rows);
+        setEtlSelectedRows(new Set());
+        setEtlCurrentPage(page);
+        const raw = data as Record<string, unknown>;
+        const pagination = raw.pagination as Record<string, unknown> | undefined;
+        const total =
+          raw.total_pages ??
+          raw.totalPages ??
+          raw.total_pages_count ??
+          pagination?.total_pages ??
+          pagination?.totalPages;
+        setEtlTotalPages(typeof total === "number" ? total : null);
+        setEtlConfigOpen(false);
+        setEtlResponseModalOpen(true);
+      } else {
+        const msg = (data as { message?: string; msg?: string }).message || (data as { msg?: string }).msg || `Request failed (${res.status})`;
+        toast.error(msg);
+        setEtlError(msg);
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Request failed");
+      const msg = err instanceof Error ? err.message : "Request failed";
+      toast.error(msg);
+      setEtlError(msg);
     } finally {
       setExecuting(false);
     }
   };
+
+  const handleEtlPageChange = (nextPage: number) => {
+    if (nextPage < 1) return;
+    if (etlTotalPages != null && nextPage > etlTotalPages) return;
+    handleEtlExecute(nextPage);
+  };
+
+  // Auto-run ETL when dropped (pendingEtlAutoRunId is set by Container on drop)
+  useEffect(() => {
+    if (!isEtl || !pendingEtlAutoRunId || element.id !== pendingEtlAutoRunId) return;
+    setPendingEtlAutoRunId(null); // clear immediately to avoid re-running
+    handleEtlExecute();
+  }, [isEtl, pendingEtlAutoRunId, element.id]);
 
   const threeDotsTrigger = (
     <div
@@ -166,7 +282,8 @@ export default function ElementOptionsDropdown({ element }: Props) {
 
   if (isEtl) {
     return (
-      <Dialog>
+      <>
+      <Dialog open={etlConfigOpen} onOpenChange={setEtlConfigOpen}>
         <DialogTrigger asChild>{threeDotsTrigger}</DialogTrigger>
         <DialogContent
           className="max-w-md max-h-[90vh] overflow-y-auto"
@@ -194,14 +311,16 @@ export default function ElementOptionsDropdown({ element }: Props) {
                 className="h-9 text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">Token</Label>
-              <Input
-                type="password"
-                placeholder="Bearer token"
-                value={element.token ?? ""}
-                onChange={(e) => handleEtlConfigChange("token", e.target.value)}
-                className="h-9 text-sm"
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-muted-foreground">Use session token</Label>
+              <Switch
+                checked={!!element.useToken}
+                onCheckedChange={(checked) =>
+                  dispatch({
+                    type: "UPDATE_ELEMENT",
+                    payload: { elementDetails: { ...element, useToken: checked } },
+                  })
+                }
               />
             </div>
             <div className="space-y-2">
@@ -225,11 +344,16 @@ export default function ElementOptionsDropdown({ element }: Props) {
             </div>
             <Button
               className="w-full"
-              onClick={handleEtlExecute}
+              onClick={() => handleEtlExecute()}
               disabled={executing}
             >
               {executing ? "Executing…" : "Execute"}
             </Button>
+            {etlError && (
+              <div className="text-sm text-destructive rounded border border-destructive/30 bg-destructive/10 px-3 py-2">
+                {etlError}
+              </div>
+            )}
             <div className="flex gap-2 pt-2 border-t">
               <Button
                 variant="outline"
@@ -253,6 +377,110 @@ export default function ElementOptionsDropdown({ element }: Props) {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={etlResponseModalOpen} onOpenChange={setEtlResponseModalOpen}>
+        <DialogContent
+          className="max-w-[90vw] max-h-[90vh] overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>ETL Response</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-auto">
+            {etlResponse && etlResponse.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden bg-background">
+                <div className="overflow-x-auto max-h-[70vh]">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 bg-muted/90 z-10">
+                      <tr>
+                        <th className="text-left font-semibold px-3 py-3 border-b border-r border-border w-10">
+                          <input
+                            type="checkbox"
+                            checked={etlResponse.length > 0 && etlSelectedRows.size === etlResponse.length}
+                            onChange={(e) => {
+                              const next = e.target.checked ? new Set(etlResponse.map((_, i) => i)) : new Set<number>();
+                              setEtlSelectedRows(next);
+                              if (next.size > 0) fetchListById(next);
+                            }}
+                            className="h-4 w-4 rounded cursor-pointer"
+                          />
+                        </th>
+                        {Object.keys(etlResponse[0]).map((k) => (
+                          <th key={k} className="text-left font-semibold px-4 py-3 border-b border-r border-border last:border-r-0 whitespace-nowrap">
+                            {k.replace(/_/g, " ")}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {etlResponse.map((row, i) => (
+                        <tr key={i} className="border-b border-border last:border-b-0 hover:bg-muted/30">
+                          <td className="px-3 py-2.5 border-r border-border">
+                            <input
+                              type="checkbox"
+                              checked={etlSelectedRows.has(i)}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const next = new Set(etlSelectedRows);
+                                if (next.has(i)) next.delete(i);
+                                else next.add(i);
+                                setEtlSelectedRows(next);
+                                if (next.size > 0) fetchListById(next);
+                              }}
+                              className="h-4 w-4 rounded cursor-pointer"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </td>
+                          {Object.keys(etlResponse[0]).map((k) => (
+                            <td key={k} className="px-4 py-2.5 border-r border-border last:border-r-0">
+                              {row[k] !== null && row[k] !== undefined
+                                ? typeof row[k] === "object"
+                                  ? JSON.stringify(row[k])
+                                  : String(row[k])
+                                : "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">No data to display</p>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-4 mt-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleEtlPageChange(etlCurrentPage - 1)}
+                disabled={etlCurrentPage <= 1 || executing}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                Page {etlCurrentPage}
+                {etlTotalPages != null ? ` of ${etlTotalPages}` : ""}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleEtlPageChange(etlCurrentPage + 1)}
+                disabled={(etlTotalPages != null && etlCurrentPage >= etlTotalPages) || executing}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button variant="outline" onClick={() => setEtlResponseModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      </>
     );
   }
 

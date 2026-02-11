@@ -1,4 +1,3 @@
-import * as React from "react";
 import { HexColorPicker } from "react-colorful";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { Input } from "./input";
