@@ -313,7 +313,11 @@ export default function ElementOptionsDropdown({ element }: Props) {
                 <label className="text-xs text-muted-foreground">Font Size</label>
                 <div className="flex gap-2">
                   <Select
-                    value={element.styles?.fontSize || ""}
+                    value={
+                      typeof element.styles?.fontSize === "number"
+                        ? String(element.styles.fontSize)
+                        : element.styles?.fontSize || ""
+                    }
                     onValueChange={(value) => handleStyleUpdate("fontSize", value)}
                   >
                     <SelectTrigger className="h-9 text-xs">
