@@ -1,6 +1,8 @@
-import React, { createContext, Dispatch, useContext, useReducer, useState } from "react";
+import React, { createContext, Dispatch, useContext, useReducer, useState, useCallback, useEffect } from "react";
 import { ElementTypes, CategoryTypes } from "@/lib/constants";
 import { createId } from "@paralleldrive/cuid2";
+
+export type SitePage = { id: string; slug: string; title: string; content: string };
 
 export type DeviceTypes = "Desktop" | "Tablet" | "Mobile";
 
@@ -38,6 +40,10 @@ export type ElementContentPayload = {
   cardTitle?: string;
   cardBody?: string;
   cardImageUrl?: string;
+  /** Superset chart: chart ID and base URL for iframe embed */
+  chartId?: number;
+  baseUrl?: string;
+  height?: number;
 };
 
 export type EditorElement = {
@@ -67,6 +73,7 @@ export type Editor = {
   elements: EditorElement[];
   selectedElement: EditorElement;
   device: DeviceTypes;
+  currentPageId: string; // "home" for main content, or page id for extra pages
 };
 
 export type HistoryState = { history: Editor[]; currentIndex: number };
@@ -90,6 +97,7 @@ const initialEditor: Editor = {
   liveMode: false,
   visible: false,
   siteId: "",
+  currentPageId: "home",
 };
 
 const initialState: EditorState = {
@@ -113,7 +121,8 @@ export type EditorAction =
   | { type: "UNDO" }
   | { type: "REDO" }
   | { type: "LOAD_DATA"; payload: { elements: EditorElement[]; withLive: boolean } }
-  | { type: "SET_SITE_ID"; payload: { siteId: string } };
+  | { type: "SET_SITE_ID"; payload: { siteId: string } }
+  | { type: "SWITCH_PAGE"; payload: { pageId: string } };
 
 function addElement(arr: EditorElement[], action: EditorAction): EditorElement[] {
   if (action.type !== "ADD_ELEMENT") return arr;
@@ -333,9 +342,11 @@ function editorReducer(state: EditorState, action: EditorAction): EditorState {
       }
       return state;
     case "LOAD_DATA":
-      return { ...initialState, editor: { ...initialEditor, elements: action.payload.elements || initialEditor.elements, liveMode: !!action.payload.withLive } };
+      return { ...initialState, editor: { ...initialEditor, elements: action.payload.elements || initialEditor.elements, liveMode: !!action.payload.withLive, currentPageId: state.editor.currentPageId } };
     case "SET_SITE_ID":
       return { ...state, editor: { ...state.editor, siteId: action.payload.siteId } };
+    case "SWITCH_PAGE":
+      return { ...state, editor: { ...state.editor, currentPageId: action.payload.pageId } };
     default:
       return state;
   }
@@ -349,23 +360,120 @@ interface EditorContextValue {
   /** When set, ETL element with this id should auto-run API on mount (used after drag-and-drop) */
   pendingEtlAutoRunId: string | null;
   setPendingEtlAutoRunId: (id: string | null) => void;
+  /** Multi-page support */
+  pages: SitePage[];
+  siteContent: string | null;
+  setPages: (updater: (prev: SitePage[]) => SitePage[]) => void;
+  setSiteContent: (content: string | null) => void;
+  switchPage: (pageId: string) => void;
+  addPage: (title: string) => Promise<void>;
+  getCurrentPageContent: () => string | null;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
+
+const defaultBodyContent = JSON.stringify([
+  { content: [], id: "__body", name: "Body", styles: {}, type: "__body", category: "Container" },
+]);
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "page";
+}
 
 export function EditorProvider({
   children,
   siteId,
   siteDetails,
+  initialContent = null,
+  initialPages = [],
 }: {
   children: React.ReactNode;
   siteId: string;
   siteDetails: { id: string; title: string; subdomain: string; visible: boolean; content?: string | null };
+  initialContent?: string | null;
+  initialPages?: SitePage[];
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialState);
   const [pendingEtlAutoRunId, setPendingEtlAutoRunId] = useState<string | null>(null);
+  const [siteContent, setSiteContent] = useState<string | null>(initialContent);
+  const [pages, setPagesState] = useState<SitePage[]>(initialPages);
+
+  useEffect(() => {
+    setSiteContent(initialContent);
+    setPagesState(initialPages);
+  }, [initialContent, initialPages]);
+
+  const getCurrentPageContent = useCallback(() => {
+    if (state.editor.currentPageId === "home") return siteContent;
+    const page = pages.find((p) => p.id === state.editor.currentPageId);
+    return page?.content ?? null;
+  }, [state.editor.currentPageId, siteContent, pages]);
+
+  const setPages = useCallback((updater: (prev: SitePage[]) => SitePage[]) => {
+    setPagesState((prev) => updater(prev));
+  }, []);
+
+  const switchPage = useCallback(
+    (pageId: string) => {
+      dispatch({ type: "SWITCH_PAGE", payload: { pageId } });
+    },
+    [dispatch]
+  );
+
+  const addPage = useCallback(
+    async (title: string) => {
+      const { api } = await import("@/lib/api");
+      const { toast } = await import("sonner");
+      const newPage: SitePage = {
+        id: createId(),
+        slug: slugify(title),
+        title: title.trim() || "New Page",
+        content: defaultBodyContent,
+      };
+      const updated = [...pages, newPage];
+      const res = await api(`/sites/${siteId}`, {
+        method: "PUT",
+        body: JSON.stringify({ pages: updated }),
+      });
+      if (!res.success) {
+        toast.error(res.msg || "Failed to add page");
+        return;
+      }
+      setPagesState(updated);
+      dispatch({ type: "SWITCH_PAGE", payload: { pageId: newPage.id } });
+      dispatch({
+        type: "LOAD_DATA",
+        payload: {
+          elements: JSON.parse(newPage.content),
+          withLive: false,
+        },
+      });
+      toast.success("Page added");
+    },
+    [siteId, pages, dispatch]
+  );
+
   return (
-    <EditorContext.Provider value={{ state, dispatch, siteId, siteDetails, pendingEtlAutoRunId, setPendingEtlAutoRunId }}>
+    <EditorContext.Provider
+      value={{
+        state,
+        dispatch,
+        siteId,
+        siteDetails,
+        pendingEtlAutoRunId,
+        setPendingEtlAutoRunId,
+        pages,
+        siteContent,
+        setPages,
+        setSiteContent,
+        switchPage,
+        addPage,
+        getCurrentPageContent,
+      }}
+    >
       {children}
     </EditorContext.Provider>
   );

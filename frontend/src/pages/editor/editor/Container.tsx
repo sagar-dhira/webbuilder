@@ -4,11 +4,13 @@ import { defaultStyles } from "@/lib/constants";
 import { ElementTypes } from "@/lib/constants";
 import { createId } from "@paralleldrive/cuid2";
 import Recursive from "./Recursive";
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import ResizeHandle from "@/components/ui/resize-handle";
 import ElementOptionsDropdown from "@/components/editor/ElementOptionsDropdown";
-import { GripVertical, Database, Hash, FileText, Activity, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { GripVertical, Database, Hash, FileText, Activity, Calendar, RefreshCw } from "lucide-react";
 
 // Helper function to find parent and siblings in the element tree
 function findParentAndSiblings(
@@ -32,14 +34,6 @@ function findParentAndSiblings(
   return null;
 }
 
-// Helper function to parse width/height values
-function parseSize(value: string | undefined): number {
-  if (!value) return 0;
-  const match = value.match(/^(\d+(?:\.\d+)?)(px|%|rem|em)$/);
-  if (!match) return 0;
-  return parseFloat(match[1]);
-}
-
 const ETL_DEFAULT_BODY = () => {
   const raw = import.meta.env.VITE_ETL_DEFAULT_BODY;
   if (typeof raw === "string" && raw.trim()) {
@@ -56,10 +50,23 @@ export default function Container({ element }: { element: EditorElement }) {
   const { id, content, name, styles, type } = element;
   const { state, dispatch, setPendingEtlAutoRunId } = useEditor();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [rerunLoadingIndex, setRerunLoadingIndex] = useState<number | null>(null);
   const isSelected = state.editor.selectedElement.id === id;
   const containerRef = useRef<HTMLDivElement>(null);
   const initialSizeRef = useRef<{ width: number; height: number } | null>(null);
   const cumulativeDeltaRef = useRef<{ deltaX: number; deltaY: number }>({ deltaX: 0, deltaY: 0 });
+  const elementRef = useRef(element);
+  const wsRef = useRef<WebSocket | null>(null);
+  useEffect(() => {
+    elementRef.current = element;
+  }, [element]);
+
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, []);
   const isColumnLayout = type === "2Col" || type === "3Col";
   const isRowLayout = type === "2Row" || type === "3Row";
   const isGridLayout = type === "Grid2x2" || type === "Layout7";
@@ -83,6 +90,101 @@ export default function Container({ element }: { element: EditorElement }) {
     isComplexLayout
   );
 
+  const handleRerunJob = useCallback(
+    async (item: Record<string, unknown>, idx: number) => {
+      const sessionId = item.session_id as string | undefined;
+      if (!sessionId || typeof sessionId !== "string") {
+        toast.error("Rerun failed", { description: "No session ID available for this ETL job" });
+        return;
+      }
+      const baseUrl = element.apiEndpoint?.replace(/\/data_flow\/list\/?$/, "") || "https://api-dev.akashic.dhira.io/application";
+      const runJobUrl = `${baseUrl}/job/ETL/run_immediate_job`;
+      const token = element.useToken
+        ? localStorage.getItem("access_token") || localStorage.getItem("token")
+        : null;
+      const tenantName = element.tenantName?.trim() || import.meta.env.VITE_ETL_TENANT_NAME || "tenanta";
+      setRerunLoadingIndex(idx);
+      try {
+        const headers: Record<string, string> = { accept: "*/*", "Content-Type": "application/json" };
+        if (token?.trim()) headers["Authorization"] = `Bearer ${token.trim()}`;
+        if (tenantName) headers["tenantname"] = tenantName;
+        const res = await fetch(runJobUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          toast.success("Job started", { description: "ETL job has been queued for rerun" });
+          const wsUrl = "wss://api-dev.akashic.dhira.io/websocket/job_monitoring_channel";
+          const dataFlowId = item.data_flow_id ?? item.entity_id;
+          const clearRunning = () => {
+            wsRef.current?.close();
+            wsRef.current = null;
+            setRerunLoadingIndex(null);
+          };
+          try {
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+            ws.onmessage = (event) => {
+              try {
+                const parsed = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+                console.log("[Job Monitoring WebSocket]", parsed);
+                const msg = parsed as { id?: number; status?: string; error?: string; last_executed?: string; messageType?: string };
+                if (msg.messageType !== "data_flow") return;
+                const msgId = msg.id;
+                if (msgId == null || String(msgId) !== String(dataFlowId)) return;
+                const el = elementRef.current;
+                const detail = el.etlDetailData;
+                if (!Array.isArray(detail)) return;
+                const itemIdx = detail.findIndex(
+                  (d) => String(d.data_flow_id ?? d.entity_id) === String(msgId)
+                );
+                if (itemIdx === -1) return;
+                const updated = [...detail];
+                updated[itemIdx] = {
+                  ...updated[itemIdx],
+                  status: msg.status ?? updated[itemIdx].status,
+                  error: msg.error ?? updated[itemIdx].error,
+                  last_executed: msg.last_executed ?? updated[itemIdx].last_executed,
+                };
+                dispatch({
+                  type: "UPDATE_ELEMENT",
+                  payload: { elementDetails: { ...el, etlDetailData: updated } },
+                });
+                const s = (msg.status ?? "").toLowerCase();
+                if (s === "failed" || s === "finished" || s === "completed" || s === "error") {
+                  clearRunning();
+                }
+              } catch {
+                console.log("[Job Monitoring WebSocket]", event.data);
+              }
+            };
+            ws.onerror = (err) => {
+              console.warn("[Job Monitoring WebSocket] error", err);
+              clearRunning();
+            };
+            ws.onclose = () => {
+              console.log("[Job Monitoring WebSocket] closed");
+              clearRunning();
+            };
+          } catch (wsErr) {
+            console.warn("[Job Monitoring WebSocket] failed to connect", wsErr);
+            setRerunLoadingIndex(null);
+          }
+        } else {
+          const msg = (data as { message?: string }).message || (data as { msg?: string }).msg || "Failed to rerun job";
+          toast.error("Rerun failed", { description: msg });
+          setRerunLoadingIndex(null);
+        }
+      } catch (err) {
+        toast.error("Rerun failed", { description: err instanceof Error ? err.message : "Network error" });
+        setRerunLoadingIndex(null);
+      }
+    },
+    [element.apiEndpoint, element.useToken, element.tenantName, dispatch]
+  );
+
   const handleDrop = (e: React.DragEvent) => {
     e.stopPropagation();
     setIsDraggingOver(false);
@@ -98,9 +200,34 @@ export default function Container({ element }: { element: EditorElement }) {
 
     // Add new element from sidebar
     const componentType = e.dataTransfer.getData("componentType") as ElementTypes;
+    const chartDataRaw = e.dataTransfer.getData("chartData");
     const addElement = (details: EditorElement) => {
       dispatch({ type: "ADD_ELEMENT", payload: { containerId: id, elementDetails: details } });
     };
+
+    // Superset chart (chartId + baseUrl from chartData)
+    if (componentType === "chart" && chartDataRaw) {
+      try {
+        const { chartId, baseUrl, sliceName } = JSON.parse(chartDataRaw) as {
+          chartId: number;
+          baseUrl: string;
+          sliceName?: string;
+        };
+        if (chartId && baseUrl) {
+          addElement({
+            content: { chartId, baseUrl, height: 400 },
+            id: createId(),
+            name: sliceName || `Chart ${chartId}`,
+            styles: {},
+            type: "chart",
+            category: "Content",
+          });
+        }
+      } catch {
+        // ignore invalid chartData
+      }
+      return;
+    }
 
     switch (componentType) {
       case "h1":
@@ -547,291 +674,24 @@ export default function Container({ element }: { element: EditorElement }) {
     e.dataTransfer.effectAllowed = "move";
   };
 
-  // Handle width resize for columns, grids, and cells
-  const handleWidthResize = (deltaX: number) => {
+  // Widget-style resize: same logic as ElementWrapper for all layouts
+  const handleResize = (deltaX: number, deltaY: number) => {
     if (!containerRef.current) return;
-    
     const rect = containerRef.current.getBoundingClientRect();
-    const currentActualWidth = rect.width;
-    
-    // Initialize or reset if this looks like a new resize session
-    // Always use actual rendered size for consistency
     if (initialSizeRef.current === null) {
-      // First resize - initialize with actual rendered size
-      initialSizeRef.current = { 
-        width: currentActualWidth, 
-        height: rect.height 
-      };
+      initialSizeRef.current = { width: rect.width, height: rect.height };
       cumulativeDeltaRef.current = { deltaX: 0, deltaY: 0 };
-    } else {
-      // Check if we need to reset (element was resized externally or new session started)
-      const expectedWidth = initialSizeRef.current.width + cumulativeDeltaRef.current.deltaX;
-      const widthDiff = Math.abs(currentActualWidth - expectedWidth);
-      if (widthDiff > 10) {
-        // Reset - size doesn't match, likely a new resize session
-        initialSizeRef.current = { 
-          width: currentActualWidth, 
-          height: rect.height 
-        };
-        cumulativeDeltaRef.current = { deltaX: 0, deltaY: 0 };
-      }
     }
-    
-    // Accumulate the delta
     cumulativeDeltaRef.current.deltaX += deltaX;
-    
-    // Use memoized parent siblings info
-    const parentSiblings = findParentAndSiblings(state.editor.elements, id);
-    if (!parentSiblings || !parentSiblings.parent) {
-      // If no parent, just update this element using initial size + cumulative delta
-      const newWidth = Math.max(50, initialSizeRef.current.width + cumulativeDeltaRef.current.deltaX);
-      const updatedElement = {
-        ...element,
-        styles: {
-          ...styles,
-          width: `${newWidth}px`,
-        },
-      };
-      dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: updatedElement } });
-      dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: updatedElement } });
-      return;
-    }
-    
-    // Reset initial size ref when resize ends (handled by checking if delta is 0 or resize stops)
-    // For now, we'll use the current approach but improve it
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const currentWidth = containerRect.width;
-    
-    const { parent, siblings } = parentSiblings;
-    const currentIndex = siblings.findIndex((s) => s.id === id);
-    
-    if (currentIndex === -1) return;
-    
-    // Get parent container element
-    const parentElement = document.querySelector(`[data-element-id="${parent.id}"]`) as HTMLElement;
-    const parentWidth = parentElement?.getBoundingClientRect().width || containerRect.width * siblings.length;
-    
-    // Calculate new width percentage
-    const newWidth = currentWidth + deltaX;
-    const newWidthPercent = (newWidth / parentWidth) * 100;
-    const minWidth = 10; // Minimum 10%
-    const maxWidth = 90; // Maximum 90%
-    const clampedWidth = Math.max(minWidth, Math.min(maxWidth, newWidthPercent));
-    
-    // Calculate current total width of all siblings
-    let totalCurrentWidth = 0;
-    siblings.forEach((sib) => {
-      const sibWidth = parseSize(sib.styles?.width as string);
-      totalCurrentWidth += sibWidth || (100 / siblings.length);
-    });
-    
-    // Calculate remaining width for other siblings
-    const remainingWidth = 100 - clampedWidth;
-    const otherSiblingsCurrentWidth = totalCurrentWidth - (parseSize(styles?.width as string) || (100 / siblings.length));
-    const scaleFactor = otherSiblingsCurrentWidth > 0 ? remainingWidth / otherSiblingsCurrentWidth : (remainingWidth / (siblings.length - 1));
-    
-    // Update all siblings
-    const updatedSiblings = siblings.map((sib, idx) => {
-      if (idx === currentIndex) {
-        return {
-          ...sib,
-          styles: {
-            ...sib.styles,
-            width: `${clampedWidth}%`,
-            flex: "none",
-          },
-        };
-      }
-      
-      const currentSibWidth = parseSize(sib.styles?.width as string);
-      const baseWidth = currentSibWidth || (100 / siblings.length);
-      const newSibWidth = baseWidth * scaleFactor;
-      
-      return {
-        ...sib,
-        styles: {
-          ...sib.styles,
-          width: `${newSibWidth}%`,
-          flex: "none",
-        },
-      };
-    });
-    
-    // Update parent with new children
-    const updatedParent = {
-      ...parent,
-      content: updatedSiblings,
-    };
-    
-    dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: updatedParent } });
-    
-    // Update selected element
-    const updatedElement = updatedSiblings[currentIndex];
-    dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: updatedElement } });
-  };
-
-  // Handle height resize
-  const handleHeightResize = (deltaY: number) => {
-    if (!containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    const currentActualHeight = rect.height;
-    
-    // Initialize or reset if this looks like a new resize session
-    // Always use actual rendered size for consistency
-    if (initialSizeRef.current === null) {
-      // First resize - initialize with actual rendered size
-      initialSizeRef.current = { 
-        width: rect.width,
-        height: currentActualHeight 
-      };
-      cumulativeDeltaRef.current = { deltaX: 0, deltaY: 0 };
-    } else {
-      // Check if we need to reset (element was resized externally or new session started)
-      const expectedHeight = initialSizeRef.current.height + cumulativeDeltaRef.current.deltaY;
-      const heightDiff = Math.abs(currentActualHeight - expectedHeight);
-      if (heightDiff > 10) {
-        // Reset - size doesn't match, likely a new resize session
-        initialSizeRef.current = { 
-          width: rect.width,
-          height: currentActualHeight 
-        };
-        cumulativeDeltaRef.current = { deltaX: 0, deltaY: 0 };
-      }
-    }
-    
-    // Accumulate the delta
     cumulativeDeltaRef.current.deltaY += deltaY;
-    
-    // Use initial size + cumulative delta for smoother resizing
-    const newHeight = Math.max(50, initialSizeRef.current.height + cumulativeDeltaRef.current.deltaY); // Minimum 50px
-    
-    // Find parent and siblings
-    const parentSiblings = findParentAndSiblings(state.editor.elements, id);
-    
-    // Update current element
+    const newWidth = Math.max(40, initialSizeRef.current.width + cumulativeDeltaRef.current.deltaX);
+    const newHeight = Math.max(24, initialSizeRef.current.height + cumulativeDeltaRef.current.deltaY);
     const updatedElement = {
       ...element,
-      styles: {
-        ...styles,
-        height: `${newHeight}px`,
-      },
+      styles: { ...styles, width: `${newWidth}px`, height: `${newHeight}px` },
     };
-    
-    // If we have siblings in a column or row layout, update them to match height
-    if (parentSiblings && parentSiblings.parent && (
-      parentSiblings.parent.type === "2Col" || 
-      parentSiblings.parent.type === "3Col" ||
-      parentSiblings.parent.type === "2Row" ||
-      parentSiblings.parent.type === "3Row" ||
-      parentSiblings.parent.type === "Grid2x2" ||
-      parentSiblings.parent.type === "Layout7"
-    )) {
-      const { siblings } = parentSiblings;
-      const currentIndex = siblings.findIndex((s) => s.id === id);
-      
-      if (currentIndex !== -1) {
-        // For row layouts, resize height similar to column width resizing
-        const parentType = parentSiblings.parent.type;
-        if (parentType === "2Row" || parentType === "3Row") {
-          const parentElement = document.querySelector(`[data-element-id="${parentSiblings.parent.id}"]`) as HTMLElement;
-          const currentRect = containerRef.current?.getBoundingClientRect();
-          const parentHeight = parentElement?.getBoundingClientRect().height || (currentRect ? currentRect.height * siblings.length : 0);
-          const newHeightPercent = (newHeight / parentHeight) * 100;
-          const minHeight = 10;
-          const maxHeight = 90;
-          const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeightPercent));
-          
-          let totalCurrentHeight = 0;
-          siblings.forEach((sib) => {
-            const sibHeight = parseSize(sib.styles?.height as string);
-            totalCurrentHeight += sibHeight || (100 / siblings.length);
-          });
-          
-          const remainingHeight = 100 - clampedHeight;
-          const otherSiblingsCurrentHeight = totalCurrentHeight - (parseSize(styles?.height as string) || (100 / siblings.length));
-          const scaleFactor = otherSiblingsCurrentHeight > 0 ? remainingHeight / otherSiblingsCurrentHeight : (remainingHeight / (siblings.length - 1));
-          
-          const updatedSiblings = siblings.map((sib, idx) => {
-            if (idx === currentIndex) {
-              return {
-                ...sib,
-                styles: {
-                  ...sib.styles,
-                  height: `${clampedHeight}%`,
-                  flex: "none",
-                },
-              };
-            }
-            
-            const currentSibHeight = parseSize(sib.styles?.height as string);
-            const baseHeight = currentSibHeight || (100 / siblings.length);
-            const newSibHeight = baseHeight * scaleFactor;
-            
-            return {
-              ...sib,
-              styles: {
-                ...sib.styles,
-                height: `${newSibHeight}%`,
-                flex: "none",
-              },
-            };
-          });
-          
-          const updatedParent = {
-            ...parentSiblings.parent,
-            content: updatedSiblings,
-          };
-          
-          dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: updatedParent } });
-          dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: updatedSiblings[currentIndex] } });
-          return;
-        }
-        
-        // For column layouts and grids, update siblings to match height
-        const updatedSiblings = siblings.map((sib, idx) => {
-          if (idx === currentIndex) return updatedElement;
-          
-          // Update height to match if it's a cell in the same row
-          return {
-            ...sib,
-            styles: {
-              ...sib.styles,
-              height: `${newHeight}px`,
-            },
-          };
-        });
-        
-        // Update parent with new children
-        const updatedParent = {
-          ...parentSiblings.parent,
-          content: updatedSiblings,
-        };
-        
-        dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: updatedParent } });
-        dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: updatedElement } });
-        return;
-      }
-    }
-    
-    // No siblings or not in column layout, just update this element
     dispatch({ type: "UPDATE_ELEMENT", payload: { elementDetails: updatedElement } });
     dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: { elementDetails: updatedElement } });
-  };
-
-  // Handle resize for both dimensions
-  const handleResize = (deltaX: number, deltaY: number) => {
-    // Initialize initial size on first resize
-    if (initialSizeRef.current === null && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const currentWidth = parseSize(styles?.width as string) || rect.width;
-      const currentHeight = parseSize(styles?.height as string) || rect.height;
-      initialSizeRef.current = { width: currentWidth, height: currentHeight };
-      cumulativeDeltaRef.current = { deltaX: 0, deltaY: 0 };
-    }
-    
-    if (deltaX !== 0) handleWidthResize(deltaX);
-    if (deltaY !== 0) handleHeightResize(deltaY);
   };
   
   // Reset initial size when element changes or selection changes
@@ -903,10 +763,11 @@ export default function Container({ element }: { element: EditorElement }) {
         {type === "etl" && element.etlDetailData && element.etlDetailData.length > 0 ? (
           <div className="flex flex-col gap-3 min-h-[100px] w-full rounded-lg border bg-card shadow-sm border-border p-4 overflow-auto">
             {element.etlDetailData.map((item, idx) => {
-              const id = item.data_flow_id ?? item.entity_id ?? "—";
-              const name = item.data_flow_name ?? "—";
+              const flowId = item.data_flow_id ?? item.entity_id ?? "—";
+              const flowName = item.data_flow_name ?? "—";
               const status = item.status ?? "—";
               const created = item.created_datetime_timestamp ?? item.created_datetime_times ?? "—";
+              const lastExecuted = item.last_executed ?? "";
               const formatDate = (val: unknown) => {
                 if (val == null || val === "") return "—";
                 const str = String(val);
@@ -932,7 +793,7 @@ export default function Container({ element }: { element: EditorElement }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Data Flow ID</p>
-                        <p className="text-sm font-semibold truncate">{id != null ? String(id) : "—"}</p>
+                        <p className="text-sm font-semibold truncate">{flowId != null ? String(flowId) : "—"}</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-3">
@@ -941,7 +802,7 @@ export default function Container({ element }: { element: EditorElement }) {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Data Flow Name</p>
-                        <p className="text-sm font-semibold truncate" title={String(name)}>{name != null ? String(name) : "—"}</p>
+                        <p className="text-sm font-semibold truncate" title={String(flowName)}>{flowName != null ? String(flowName) : "—"}</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-3">
@@ -969,7 +830,35 @@ export default function Container({ element }: { element: EditorElement }) {
                         <p className="text-sm font-medium">{formatDate(created)}</p>
                       </div>
                     </div>
+                    {lastExecuted && (
+                      <div className="flex items-start gap-3 sm:col-span-2">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <RefreshCw className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last executed (live)</p>
+                          <p className="text-sm font-medium">{formatDate(lastExecuted)}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                  {typeof item.session_id === "string" && item.session_id.trim() !== "" && (
+                    <div className="mt-4 pt-3 border-t border-border">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full sm:w-auto gap-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRerunJob(item, idx);
+                        }}
+                        disabled={rerunLoadingIndex === idx}
+                      >
+                        <RefreshCw className={cn("h-4 w-4", rerunLoadingIndex === idx && "animate-spin")} />
+                        {rerunLoadingIndex === idx ? "Running" : "Rerun job"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -997,7 +886,7 @@ export default function Container({ element }: { element: EditorElement }) {
           {/* Right edge resize handle for width */}
           <ResizeHandle
             direction="horizontal"
-            onResize={(deltaX) => handleWidthResize(deltaX)}
+            onResize={(dx) => handleResize(dx, 0)}
             className="right-0 top-0 bottom-0 w-2 hover:w-3 transition-all rounded-r-sm cursor-ew-resize"
             disabled={state.editor.liveMode}
           />
@@ -1005,7 +894,7 @@ export default function Container({ element }: { element: EditorElement }) {
           {/* Bottom edge resize handle for height */}
           <ResizeHandle
             direction="vertical"
-            onResize={(deltaY) => handleHeightResize(deltaY)}
+            onResize={(_, dy) => handleResize(0, dy)}
             className="bottom-0 left-0 right-0 h-2 hover:h-3 transition-all rounded-b-sm cursor-ns-resize"
             disabled={state.editor.liveMode}
           />

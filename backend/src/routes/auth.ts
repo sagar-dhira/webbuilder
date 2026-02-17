@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { logInfo } from "../lib/logger.js";
 import { authenticateToken, JwtPayload } from "../middleware/auth.js";
+import { warmSupersetToken } from "../services/superset.js";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
@@ -145,6 +146,10 @@ router.post("/keycloak-token", async (req, res) => {
     { expiresIn: "7d" }
   );
   logInfo("auth_keycloak_token", "Keycloak token exchanged", { email: user.email }, user.id);
+
+  // Login to Superset backend now so token is cached when user opens editor
+  warmSupersetToken();
+
   res.json({
     success: true,
     token,

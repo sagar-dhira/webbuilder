@@ -59,7 +59,7 @@ router.put("/:id", async (req, res) => {
   });
   if (!site) return res.status(404).json({ success: false, msg: "Site not found" });
 
-  const { title, subdomain, previewImage, content, visible } = req.body;
+  const { title, subdomain, previewImage, content, visible, pages } = req.body;
 
   const updated = await prisma.page.update({
     where: { id: req.params.id },
@@ -69,6 +69,7 @@ router.put("/:id", async (req, res) => {
       ...(previewImage != null && { previewImage }),
       ...(content != null && { content }),
       ...(visible != null && { visible }),
+      ...(pages != null && { pages }),
     },
   });
   logInfo("sites_update", "User updated site", { siteId: updated.id }, req.user!.userId);

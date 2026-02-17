@@ -1,14 +1,14 @@
 import { EditorElement, useEditor, DRAGGED_ELEMENT_ID_KEY } from "@/contexts/EditorContext";
 import { Badge } from "@/components/ui/badge";
 import { defaultStyles } from "@/lib/constants";
-import { cn } from "@/lib/utils";
+import { cn, stripConflictingSizeClasses } from "@/lib/utils";
 import ElementOptionsDropdown from "@/components/editor/ElementOptionsDropdown";
 import ResizeHandle from "@/components/ui/resize-handle";
 import { GripVertical } from "lucide-react";
 import { useRef, useEffect } from "react";
 
 const RESIZABLE_TYPES: (string | null)[] = [
-  "image", "video", "audio", "marquee", "icon", "embed",
+  "image", "video", "audio", "marquee", "icon", "embed", "chart",
   "link", "button", "input", "textarea", "select", "checkbox", "radio", "submitButton",
   "ol", "ul", "blockquote", "code", "hr", "badge", "spacer", "table", "accordion", "tabs", "card",
 ];
@@ -27,6 +27,9 @@ export default function ElementWrapper({ element, children, className }: Props) 
   const initialSizeRef = useRef<{ width: number; height: number } | null>(null);
   const cumulativeDeltaRef = useRef({ deltaX: 0, deltaY: 0 });
   const canResize = RESIZABLE_TYPES.includes(element.type) && !isLive;
+  const hasExplicitWidth = !!(element.styles?.width && String(element.styles.width).trim());
+  const hasExplicitHeight = !!(element.styles?.height && String(element.styles.height).trim());
+  const effectiveClassName = stripConflictingSizeClasses(className, hasExplicitWidth, hasExplicitHeight);
 
   useEffect(() => {
     if (!isSelected) {
@@ -69,7 +72,7 @@ export default function ElementWrapper({ element, children, className }: Props) 
       draggable={!isLive}
       onDragStart={handleDragStart}
       style={{ width: element.styles?.width || "auto", height: element.styles?.height || "auto" }}
-      className={cn("relative p-0 cursor-grab active:cursor-grabbing", className, {
+      className={cn("relative p-0 cursor-grab active:cursor-grabbing", effectiveClassName, {
         "!border-blue-500 !border-2":
           isSelected && !isLive && state.editor.selectedElement.type !== "__body",
         "!border-yellow-400 !border-4": isSelected && !isLive && state.editor.selectedElement.type === "__body",

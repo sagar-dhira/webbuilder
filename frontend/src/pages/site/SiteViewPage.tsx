@@ -3,11 +3,12 @@ import { useParams } from "react-router-dom";
 import { EditorProvider } from "@/contexts/EditorContext";
 import { api } from "@/lib/api";
 import SiteEditor from "../editor/SiteEditor";
+import type { SitePage } from "@/contexts/EditorContext";
 
 export default function SiteViewPage() {
-  const { subdomain } = useParams<{ subdomain: string }>();
+  const { subdomain, pageSlug } = useParams<{ subdomain: string; pageSlug?: string }>();
   const [data, setData] = useState<{
-    site?: { id: string; title: string; subdomain: string; visible: boolean; content?: string };
+    site?: { id: string; title: string; subdomain: string; visible: boolean; content?: string; pages?: SitePage[] };
     private?: boolean;
     msg?: string;
   } | null>(null);
@@ -38,10 +39,15 @@ export default function SiteViewPage() {
   }
 
   const site = data.site;
+  const pages = Array.isArray(site.pages) ? site.pages : [];
+  const content =
+    !pageSlug || pageSlug === "home"
+      ? site.content
+      : pages.find((p) => p.slug === pageSlug)?.content ?? site.content;
 
   return (
     <EditorProvider siteId={site.id} siteDetails={site}>
-      <SiteEditor siteId={site.id} liveMode initialContent={site.content} />
+      <SiteEditor siteId={site.id} liveMode initialContent={content} />
     </EditorProvider>
   );
 }

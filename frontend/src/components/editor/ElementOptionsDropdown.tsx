@@ -80,7 +80,7 @@ export default function ElementOptionsDropdown({ element }: Props) {
     });
   };
 
-  const handleContentUpdate = (key: string, value: string | boolean) => {
+  const handleContentUpdate = (key: string, value: string | boolean | number) => {
     dispatch({
       type: "UPDATE_ELEMENT",
       payload: {
@@ -811,6 +811,28 @@ export default function ElementOptionsDropdown({ element }: Props) {
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">Embed URL</label>
                 <Input placeholder="https://..." value={String(c.embedUrl ?? "")} onChange={(e) => handleContentUpdate("embedUrl", e.target.value)} className="h-9 text-xs" />
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
+        {/* Superset Chart */}
+        {element.type === "chart" && (
+          <>
+            <div className="p-3 space-y-3">
+              <DropdownMenuLabel className="px-0 text-xs font-semibold">Superset Chart</DropdownMenuLabel>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Chart ID</label>
+                <Input type="number" placeholder="42" value={String(c.chartId ?? "")} onChange={(e) => handleContentUpdate("chartId", parseInt(e.target.value, 10) || 0)} className="h-9 text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Superset Base URL</label>
+                <Input placeholder="http://localhost:8088" value={String(c.baseUrl ?? "")} onChange={(e) => handleContentUpdate("baseUrl", e.target.value)} className="h-9 text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">Height (px)</label>
+                <Input type="number" placeholder="400" value={String(c.height ?? 400)} onChange={(e) => handleContentUpdate("height", parseInt(e.target.value, 10) || 400)} className="h-9 text-xs" />
               </div>
             </div>
             <DropdownMenuSeparator />

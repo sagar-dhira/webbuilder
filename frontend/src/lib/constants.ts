@@ -11,6 +11,7 @@ export type ElementTypes =
   | "blockquote" | "code" | "hr" | "badge" | "spacer"
   | "table" | "accordion" | "tabs" | "card"
   | "etl"
+  | "chart"
   | "__body"
   | null;
 

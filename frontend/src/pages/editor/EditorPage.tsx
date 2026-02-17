@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { SitePage } from "@/contexts/EditorContext";
 import { useParams, Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EditorProvider } from "@/contexts/EditorContext";
@@ -17,16 +18,19 @@ function EditorContent() {
     title: string;
     subdomain: string;
     visible: boolean;
+    content?: string | null;
+    pages?: SitePage[] | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!siteId) return;
-    api<{ site: { id: string; title: string; subdomain: string; visible: boolean } }>(`/sites/${siteId}`).then(
+    api<{ site: { id: string; title: string; subdomain: string; visible: boolean; content?: string | null; pages?: SitePage[] | null } }>(`/sites/${siteId}`).then(
       (res) => {
         if (res.success && res.site) {
-          setSiteDetails(res.site as { id: string; title: string; subdomain: string; visible: boolean });
+          const site = res.site as { id: string; title: string; subdomain: string; visible: boolean; content?: string | null; pages?: SitePage[] | null };
+          setSiteDetails(site);
           logInfo("editor_open", "User opened editor", { siteId });
         } else {
           setError(res.msg || "Site not found");
@@ -49,7 +53,12 @@ function EditorContent() {
   }
 
   return (
-    <EditorProvider siteId={siteId!} siteDetails={siteDetails}>
+    <EditorProvider
+      siteId={siteId!}
+      siteDetails={siteDetails}
+      initialContent={siteDetails.content ?? null}
+      initialPages={Array.isArray(siteDetails.pages) ? siteDetails.pages : []}
+    >
       <AppLayout
         variant="editor"
         header={<EditorNavigation />}

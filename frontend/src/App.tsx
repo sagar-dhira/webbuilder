@@ -30,7 +30,7 @@ export default function App() {
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/editor/:siteId" element={<ProtectedRoute><EditorPage /></ProtectedRoute>} />
-        <Route path="/s/:subdomain" element={<SiteViewPage />} />
+        <Route path="/s/:subdomain/:pageSlug?" element={<SiteViewPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

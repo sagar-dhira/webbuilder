@@ -38,3 +38,16 @@ export function formatTimeAgo(timestamp: number): string {
 }
 
 export const API_URL = import.meta.env.VITE_API_URL || "/api";
+
+/** Strip width/height classes that override inline styles (used by ElementWrapper and Container) */
+export function stripConflictingSizeClasses(
+  cls: string | undefined,
+  hasExplicitWidth: boolean,
+  hasExplicitHeight: boolean
+): string | undefined {
+  if (!cls || (!hasExplicitWidth && !hasExplicitHeight)) return cls;
+  let out = cls;
+  if (hasExplicitWidth) out = out.replace(/\s*!?w-full\s*/g, " ").replace(/\s*!?max-w-full\s*/g, " ");
+  if (hasExplicitHeight) out = out.replace(/\s*!?h-full\s*/g, " ");
+  return out.trim() || undefined;
+}

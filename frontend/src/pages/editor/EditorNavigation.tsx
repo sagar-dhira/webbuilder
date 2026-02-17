@@ -23,7 +23,7 @@ import styles from "./EditorNavigation.module.scss";
 const ROOT_DOMAIN = import.meta.env.VITE_ROOT_DOMAIN || "localhost:5173";
 
 export default function EditorNavigation() {
-  const { state, dispatch, siteDetails, siteId } = useEditor();
+  const { state, dispatch, siteDetails, siteId, pages, setPages, setSiteContent } = useEditor();
 
   useEffect(() => {
     if (siteId) dispatch({ type: "SET_SITE_ID", payload: { siteId } });
@@ -66,13 +66,31 @@ export default function EditorNavigation() {
   const handleSave = async () => {
     logInfo("editor_save", "User saved site", { siteId: siteDetails?.id });
     setIsSaving(true);
+    const contentStr = JSON.stringify(state.editor.elements);
+    const currentPageId = state.editor.currentPageId;
+
+    let body: { content?: string; pages?: { id: string; slug: string; title: string; content: string }[] };
+    if (currentPageId === "home") {
+      body = { content: contentStr };
+    } else {
+      const updatedPages = pages.map((p) =>
+        p.id === currentPageId ? { ...p, content: contentStr } : p
+      );
+      body = { pages: updatedPages };
+    }
+
     const res = await api(`/sites/${siteDetails?.id}`, {
       method: "PUT",
-      body: JSON.stringify({ content: JSON.stringify(state.editor.elements) }),
+      body: JSON.stringify(body),
     });
     setIsSaving(false);
-    if (res.success) toast.success("Changes saved");
-    else toast.error(res.msg);
+    if (res.success) {
+      if (currentPageId === "home") setSiteContent(contentStr);
+      else setPages((prev) => prev.map((p) => (p.id === currentPageId ? { ...p, content: contentStr } : p)));
+      toast.success("Changes saved");
+    } else {
+      toast.error(res.msg);
+    }
   };
 
   const isHidden = state.editor.previewMode;

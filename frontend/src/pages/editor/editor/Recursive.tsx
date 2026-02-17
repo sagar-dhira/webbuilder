@@ -25,6 +25,7 @@ import TableElement from "./Table";
 import AccordionElement from "./Accordion";
 import TabsElement from "./Tabs";
 import CardElement from "./Card";
+import ChartElement from "./Chart";
 
 export default function Recursive({ element }: { element: EditorElement }) {
   switch (element.type) {
@@ -62,6 +63,8 @@ export default function Recursive({ element }: { element: EditorElement }) {
       return <IconElement element={element} />;
     case "embed":
       return <EmbedElement element={element} />;
+    case "chart":
+      return <ChartElement element={element} />;
     case "link":
       return <LinkElement element={element} />;
     case "button":

@@ -5,6 +5,7 @@ import { authRoutes } from "./routes/auth.js";
 import { siteRoutes } from "./routes/sites.js";
 import { publicRoutes } from "./routes/public.js";
 import { logRoutes } from "./routes/logs.js";
+import { supersetRoutes } from "./routes/superset.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 
@@ -17,6 +18,7 @@ app.use(requestLogger);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/logs", logRoutes);
+app.use("/api/superset", supersetRoutes);
 app.use("/api", publicRoutes);
 app.use("/api/sites", siteRoutes);
 

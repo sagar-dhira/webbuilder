@@ -1,14 +1,12 @@
 import { useEffect } from "react";
 import { useEditor } from "@/contexts/EditorContext";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import Recursive from "./editor/Recursive";
 import styles from "./SiteEditor.module.scss";
 import { cn } from "@/lib/utils";
 
-export default function SiteEditor({ siteId, liveMode, initialContent }: { siteId: string; liveMode?: boolean; initialContent?: string | null }) {
-  const { state, dispatch } = useEditor();
+export default function SiteEditor({ liveMode, initialContent }: { siteId?: string; liveMode?: boolean; initialContent?: string | null }) {
+  const { state, dispatch, getCurrentPageContent } = useEditor();
 
   useEffect(() => {
     if (initialContent !== undefined) {
@@ -24,21 +22,15 @@ export default function SiteEditor({ siteId, liveMode, initialContent }: { siteI
       }
       return;
     }
-    api<{ content?: string }>(`/sites/${siteId}`).then((res) => {
-      if (!res.success) {
-        toast.error(res.msg || "Failed to load site");
-        return;
-      }
-      const content = (res as { content?: string }).content;
-      dispatch({
-        type: "LOAD_DATA",
-        payload: {
-          elements: content ? JSON.parse(content) : undefined,
-          withLive: false,
-        },
-      });
+    const content = getCurrentPageContent();
+    dispatch({
+      type: "LOAD_DATA",
+      payload: {
+        elements: content ? JSON.parse(content) : undefined,
+        withLive: false,
+      },
     });
-  }, [siteId, dispatch, liveMode, initialContent]);
+  }, [dispatch, liveMode, initialContent, state.editor.currentPageId, getCurrentPageContent]);
 
   const handleClick = () => dispatch({ type: "CHANGE_SELECTED_ELEMENT", payload: {} });
   const handleExitPreview = () => {

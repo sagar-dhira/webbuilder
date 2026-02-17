@@ -30,6 +30,7 @@ model Page {
   favicon      String?  @db.Text
   visible      Boolean  @default(false)
   content      String?  @db.Text
+  pages        Json?    // Array of { id, slug, title, content } for additional pages
   subdomain    String   @unique
 
   createdAt DateTime @default(now())
